@@ -1,6 +1,6 @@
 import numpy as np
 from .candle import *
-
+import time
 
 class SMA:
     def __init__(self, length: int = 5) -> None:
@@ -458,4 +458,62 @@ class BollingerBands:
         return self.__bands
 
 
-available_indicators = [Alligator, SMA, SmoothMA, RSI, EMA, MACD]
+class VWAP:
+    def __init__(self, highlight=False, await_condition=True):
+        """
+        Initialize the Volume Weighted Average Price (VWAP) calculator.
+
+        Parameters:
+        highlight (bool): Whether to return trend color info.
+        await_condition (bool): Whether to wait for trend confirmation.
+        """
+        self.cumulative_price_volume = 0.0
+        self.cumulative_volume = 0.0
+        self.vwap = None
+        self.vwap_history = []
+        self.highlight = highlight
+        self.await_condition = await_condition
+        self.price_history = []  # Store prices for tracking
+        self.previous_session = ""
+
+    def reset(self):
+        self.cumulative_price_volume = 0.0
+        self.cumulative_volume = 0.0
+        self.vwap = None
+        self.vwap_history.clear()
+        self.price_history.clear()
+
+    def __call__(self, candle: 'OHLC'):
+        if not isinstance(candle, OHLC):
+            raise TypeError("VWAP expects an OHLC object with volume.")
+
+        if time.strftime('%Y-%m-%d', time.localtime(candle.date())) != self.previous_session:
+            self.previous_session = time.strftime('%Y-%m-%d', time.localtime(candle.date()))
+            self.reset()
+
+        # VWAP uses typical price = (High + Low + Close) / 3
+        typical_price = (candle.high() + candle.low() + candle.close()) / 3
+        volume = candle.volume()
+        # Accumulate price * volume and volume
+        self.cumulative_price_volume += typical_price * volume
+        self.cumulative_volume += volume
+
+        # Calculate VWAP
+        self.vwap = self.cumulative_price_volume / self.cumulative_volume if self.cumulative_volume != 0 else typical_price
+
+        self.vwap_history.append(self.vwap)
+        self.price_history.append(candle.close())
+
+        if self.highlight:
+            if len(self.price_history) < 2:
+                return self.vwap, 0  # No trend info yet
+            else:
+                price = self.price_history[-1]
+                if price > self.vwap and self.await_condition:
+                    return self.vwap, 1  # Bullish
+                else:
+                    return self.vwap, -1  # Bearish
+        else:
+            return self.vwap
+
+
